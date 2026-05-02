@@ -1,0 +1,1 @@
+﻿<?php require_once __DIR__ . "/../config.php"; require_once __DIR__ . "/../includes/db.php"; require_once __DIR__ . "/../includes/auth.php"; Auth::check(); header("Location: " . url("leave",["action"=>"my"])); exit; ?>
