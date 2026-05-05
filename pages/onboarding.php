@@ -7,6 +7,10 @@ $pageTitle = "Onboarding — " . APP_NAME;
 $isAdmin   = Auth::isAdmin();
 $isManager = Auth::isManager();
 $deptId    = Auth::deptId();
+// Fallback: if manager's session dept is null, look it up from employee record
+if ($isManager && !$isAdmin && !$deptId) {
+    $deptId = (int)DB::fetchScalar("SELECT department_id FROM employee WHERE user_id=? AND department_id IS NOT NULL LIMIT 1", [Auth::id()]);
+}
 
 // Ensure checklist table exists
 try { DB::execute("CREATE TABLE IF NOT EXISTS `employee_doc_checklist` (`id` INT AUTO_INCREMENT PRIMARY KEY,`employee_id` INT NOT NULL,`document_type` VARCHAR(100) NOT NULL,`status` ENUM('Pending','Submitted','Approved','Waived') DEFAULT 'Pending',`document_id` INT NULL,`notes` VARCHAR(255) NULL,`created_at` INT NOT NULL DEFAULT 0,`updated_at` INT NOT NULL DEFAULT 0,FOREIGN KEY (`employee_id`) REFERENCES `employee`(`id`) ON DELETE CASCADE) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", []); } catch (\Exception $e) {}
@@ -70,7 +74,14 @@ if ($empFilter) {
             $docs = ['Employment Contract','SSS E1 Form / SS Card','PhilHealth MDR (Member Data Record)','Pag-IBIG MDF (Membership Data Form)','BIR Form 2316 / TIN Card','NBI Clearance','Birth Certificate (PSA-authenticated)','Medical Certificate','Diploma / Transcript of Records','2×2 ID Photo (white background)'];
             foreach ($docs as $doc) DB::insert("INSERT INTO employee_doc_checklist (employee_id,document_type,status,created_at,updated_at) VALUES (?,?,'Pending',?,?)", [$empFilter, $doc, time(), time()]);
         }
-        $detailChecklist = DB::fetchAll("SELECT cl.*, ed.file_name, ed.file_path FROM employee_doc_checklist cl LEFT JOIN employee_document ed ON cl.document_id=ed.id WHERE cl.employee_id=? ORDER BY FIELD(cl.status,'Pending','Submitted','Waived','Approved'), cl.document_type", [$empFilter]);
+        $detailChecklist = DB::fetchAll("SELECT cl.*,
+            COALESCE(ed1.file_name, ed2.file_name) AS file_name,
+            COALESCE(ed1.file_path, ed2.file_path) AS file_path
+            FROM employee_doc_checklist cl
+            LEFT JOIN employee_document ed1 ON cl.document_id = ed1.id
+            LEFT JOIN employee_document ed2 ON ed2.employee_id = cl.employee_id AND ed2.document_type = cl.document_type AND cl.document_id IS NULL
+            WHERE cl.employee_id=?
+            ORDER BY FIELD(cl.status,'Pending','Submitted','Waived','Approved'), cl.document_type", [$empFilter]);
     }
 }
 
@@ -132,7 +143,9 @@ require_once __DIR__ . "/../includes/layout_header.php";
             <?php if($cl["file_name"]): ?><div style="font-size:11px;color:var(--text-muted);margin-top:2px;">&#128206; <?php echo e($cl["file_name"]); ?></div><?php endif; ?>
         </div>
         <span style="font-size:11px;padding:3px 10px;border-radius:12px;background:<?php echo $clColor; ?>22;color:<?php echo $clColor; ?>;font-weight:600;"><?php echo $cl["status"]; ?></span>
-        <?php if($cl["file_name"]): ?><a href="<?php echo BASE_URL.'/'.$cl['file_path']; ?>" target="_blank" class="btn btn-sm btn-outline" style="padding:3px 8px;font-size:11px;">View File</a><?php endif; ?>
+        <?php if($cl["file_name"]): ?>
+            <a href="<?php echo BASE_URL.'/'.$cl['file_path']; ?>" target="_blank" class="btn btn-sm btn-accent" style="padding:4px 12px;font-size:11px;">👁 View File</a>
+        <?php endif; ?>
         <form method="POST" style="display:flex;gap:4px;margin:0;">
             <input type="hidden" name="_action" value="update_checklist">
             <input type="hidden" name="checklist_id" value="<?php echo $cl['id']; ?>">

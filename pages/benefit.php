@@ -48,7 +48,7 @@ require_once __DIR__ . "/../includes/layout_header.php";
 <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
 <?php foreach($benefits as $b): ?>
 <div class="hrms-card" style="padding:20px;"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;"><h3 style="margin:0;font-size:15px;font-weight:700;"><?php echo e($b["name"]); ?></h3><?php if($isAdmin): ?><a href="<?php echo url("benefit",["action"=>"edit","id"=>$b["id"]]); ?>" class="btn btn-sm btn-outline" style="padding:3px 10px;">Edit</a><?php endif; ?></div>
-<p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;"><?php echo e($b["description"]??"—"); ?></p>
+<p style="color:var(--text-muted);font-size:12px;margin:0 0 8px;"><?php echo e($b["description"]??""); ?></p>
 <div style="display:flex;justify-content:space-between;font-size:12px;"><span style="color:var(--text-muted);"><?php echo e($b["type"]??"General"); ?></span><?php if($b["value"]>0): ?><span style="color:var(--accent);font-weight:600;">&#8369;<?php echo number_format($b["value"],2); ?></span><?php endif; ?></div>
 <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">&#128101; <?php echo $b["enrolled"]; ?> enrolled</div></div>
 <?php endforeach; if(empty($benefits)): ?><div style="grid-column:1/-1;text-align:center;color:var(--text-muted);padding:40px;">No benefits configured.</div><?php endif; ?>

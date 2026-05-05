@@ -1,6 +1,9 @@
-﻿<?php
+<?php
 require_once __DIR__ . "/../config.php"; require_once __DIR__ . "/../includes/db.php"; require_once __DIR__ . "/../includes/auth.php";
 Auth::check(); Auth::requireRole(["Super Admin","Manager"]); $pageTitle="Reports — ".APP_NAME; $isAdmin=Auth::isAdmin(); $deptId=Auth::deptId();
+if (!$isAdmin && !$deptId) {
+    $deptId = (int)DB::fetchScalar("SELECT department_id FROM employee WHERE user_id=? AND department_id IS NOT NULL LIMIT 1", [Auth::id()]);
+}
 $type=$_GET["type"]??"attendance"; $month=$_GET["month"]??date("Y-m"); $empFilter=(int)($_GET["emp"]??0);
 $depts=DB::fetchAll("SELECT id,name FROM department ORDER BY name");
 $employees=DB::fetchAll("SELECT id,first_name,last_name FROM employee WHERE status IN ('Regular','Probationary') ORDER BY first_name");
@@ -14,8 +17,7 @@ if($type==="attendance"){
     $where="YEAR(lr.start_date)=?"; $params=[substr($month,0,4)];
     if(!$isAdmin){$where.=" AND e.department_id=?";$params[]=$deptId;}
     $data=DB::fetchAll("SELECT e.first_name,e.last_name,lr.leave_type,COUNT(*) as requests,SUM(lr.days) as total_days,SUM(CASE WHEN lr.status='Approved' THEN lr.days ELSE 0 END) as approved_days FROM leave_request lr JOIN employee e ON lr.employee_id=e.id WHERE $where GROUP BY lr.employee_id,e.first_name,e.last_name,lr.leave_type ORDER BY e.first_name",$params);
-} elseif($type==="payroll"&&$isAdmin){
-    $data=DB::fetchAll("SELECT p.period_label,p.pay_date,COUNT(ps.id) as headcount,SUM(ps.gross_pay) as total_gross,SUM(ps.total_deductions) as total_deductions,SUM(ps.net_pay) as total_net FROM payroll p LEFT JOIN payslip ps ON ps.payroll_id=p.id GROUP BY p.id ORDER BY p.id DESC LIMIT 12");
+// payroll report type REMOVED — payroll module dropped
 }
 require_once __DIR__ . "/../includes/layout_header.php"; ?>
 <div style="margin-bottom:20px;"><h1 style="font-size:24px;font-weight:700;margin:0;">Reports & Analytics</h1></div>
@@ -23,11 +25,11 @@ require_once __DIR__ . "/../includes/layout_header.php"; ?>
 <div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Report Type</label><select name="type" style="padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;" onchange="this.form.submit()">
 <option value="attendance" <?php echo $type==="attendance"?"selected":""; ?>>Attendance Summary</option>
 <option value="leave" <?php echo $type==="leave"?"selected":""; ?>>Leave Summary</option>
-<?php if($isAdmin): ?><option value="payroll" <?php echo $type==="payroll"?"selected":""; ?>>Payroll Summary</option><?php endif; ?>
+<?php /* Payroll Summary report option REMOVED */ ?>
 </select></div>
-<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;"><?php echo $type==="leave"?"Year":"Month"; ?></label><input type="month" name="month" value="<?php echo e($month); ?>" style="padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"></div>
-<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Employee</label><select name="emp" style="padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"><option value="">All</option><?php foreach($employees as $em): ?><option value="<?php echo $em["id"]; ?>" <?php echo $empFilter==$em["id"]?"selected":""; ?>><?php echo e($em["first_name"]." ".$em["last_name"]); ?></option><?php endforeach; ?></select></div>
-<button type="submit" class="btn btn-accent">Generate</button>
+<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;"><?php echo $type==="leave"?"Year":"Month"; ?></label><input type="month" name="month" value="<?php echo e($month); ?>" onchange="this.form.submit()" style="padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"></div>
+<div><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:4px;">Employee</label><select name="emp" onchange="this.form.submit()" style="padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"><option value="">All</option><?php foreach($employees as $em): ?><option value="<?php echo $em["id"]; ?>" <?php echo $empFilter==$em["id"]?"selected":""; ?>><?php echo e($em["first_name"]." ".$em["last_name"]); ?></option><?php endforeach; ?></select></div>
+<button type="submit" style="display:none;"></button>
 </form></div>
 <?php if($type==="attendance"&&!empty($data)): ?>
 <div class="hrms-card" style="margin-bottom:16px;"><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;padding:20px;">
@@ -44,11 +46,7 @@ foreach($kpis as $k): ?><div style="text-align:center;"><div style="font-size:28
 <thead><tr><th>Employee</th><th>Leave Type</th><th>Requests</th><th>Days Applied</th><th>Days Approved</th></tr></thead><tbody>
 <?php foreach($data as $r): ?><tr><td style="font-weight:600;"><?php echo e($r["first_name"]." ".$r["last_name"]); ?></td><td><?php echo e($r["leave_type"]); ?></td><td><?php echo $r["requests"]; ?></td><td><?php echo $r["total_days"]; ?></td><td style="color:#66bb6a;font-weight:600;"><?php echo $r["approved_days"]; ?></td></tr><?php endforeach; ?>
 </tbody></table></div></div>
-<?php elseif($type==="payroll"&&!empty($data)): ?>
-<div class="hrms-card"><div class="card-body" style="padding:0;"><table class="table hrms-table" style="margin:0;">
-<thead><tr><th>Period</th><th>Pay Date</th><th>Headcount</th><th>Total Gross</th><th>Total Deductions</th><th>Total Net</th></tr></thead><tbody>
-<?php foreach($data as $r): ?><tr><td style="font-weight:600;"><?php echo e($r["period_label"]); ?></td><td><?php echo $r["pay_date"]?date("M j, Y",strtotime($r["pay_date"])):"—"; ?></td><td><?php echo $r["headcount"]; ?></td><td>&#8369;<?php echo number_format($r["total_gross"],2); ?></td><td style="color:#ef5350;">&#8369;<?php echo number_format($r["total_deductions"],2); ?></td><td style="color:#66bb6a;font-weight:700;">&#8369;<?php echo number_format($r["total_net"],2); ?></td></tr><?php endforeach; ?>
-</tbody></table></div></div>
+<?php /* payroll report results block REMOVED */ ?>
 <?php else: ?><div class="hrms-card" style="padding:40px;text-align:center;color:var(--text-muted);">No data found for the selected filters.</div><?php endif; ?>
 <?php require_once __DIR__ . "/../includes/layout_footer.php"; ?>
 

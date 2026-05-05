@@ -1,21 +1,60 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
 Auth::check();
-$pageTitle='Announcements — '.APP_NAME; $isAdmin=Auth::isAdmin(); $isManager=Auth::isManager(); $action=$_GET['action']??'index'; $userId=Auth::id(); $deptId=Auth::deptId();
+$pageTitle='Announcements — '.APP_NAME;
+$isAdmin=Auth::isAdmin(); $isManager=Auth::isManager();
+$action=$_GET['action']??'index'; $userId=Auth::id();
+$deptId = Auth::deptId();
+// Fallback: if manager's session dept is null, look it up from employee record
+if ($isManager && !$isAdmin && !$deptId) {
+    $deptId = (int)DB::fetchScalar("SELECT department_id FROM employee WHERE user_id=? AND department_id IS NOT NULL LIMIT 1", [$userId]);
+}
 if($_SERVER['REQUEST_METHOD']==='POST'){
     $a=$_POST['_action']??'';
     if(($isAdmin||$isManager)&&$a==='save'){
         $id=(int)($_POST['id']??0); $cw=(int)($_POST['is_company_wide']??0);
         if($id)DB::execute("UPDATE announcement SET title=?,content=?,priority=?,pinned=?,is_company_wide=?,department_id=?,updated_at=? WHERE id=?",[$_POST['title'],$_POST['content']??null,$_POST['priority']??'Medium',(int)($_POST['pinned']??0),$cw,$cw?null:($deptId??null),time(),$id]);
-        else DB::insert("INSERT INTO announcement (title,content,posted_by,priority,pinned,is_company_wide,department_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",[$_POST['title'],$_POST['content']??null,$userId,$_POST['priority']??'Medium',(int)($_POST['pinned']??0),$cw,$cw?null:($deptId??null),time(),time()]);
+        else {
+            DB::insert("INSERT INTO announcement (title,content,posted_by,priority,pinned,is_company_wide,department_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",[$_POST['title'],$_POST['content']??null,$userId,$_POST['priority']??'Medium',(int)($_POST['pinned']??0),$cw,$cw?null:($deptId??null),time(),time()]);
+            // Send Notifications
+            if ($cw) {
+                $targetUsers = DB::fetchAll("SELECT user_id FROM employee WHERE user_id IS NOT NULL AND status IN ('Regular', 'Probationary')");
+            } else {
+                $targetUsers = DB::fetchAll("SELECT user_id FROM employee WHERE department_id=? AND user_id IS NOT NULL AND status IN ('Regular', 'Probationary')", [$deptId]);
+            }
+            $notifTitle = 'New Announcement: ' . $_POST['title'];
+            $notifMsg = strlen($_POST['content']??'') > 80 ? substr(strip_tags($_POST['content']??''), 0, 80) . '...' : strip_tags($_POST['content']??'');
+            foreach($targetUsers as $u) {
+                if ($u['user_id'] != $userId) {
+                    DB::insert("INSERT INTO system_notification (user_id, type, title, message, link) VALUES (?, 'info', ?, ?, ?)", [$u['user_id'], $notifTitle, $notifMsg, url('announcement')]);
+                }
+            }
+        }
         Auth::flash('success','Announcement saved!');header('Location: '.url('announcement'));exit;
     }
     if($isAdmin&&$a==='delete'){DB::execute("DELETE FROM announcement WHERE id=?",[(int)$_POST['id']]);Auth::flash('success','Deleted.');header('Location: '.url('announcement'));exit;}
 }
 $editId=(int)($_GET['id']??0); $es=$editId?DB::fetchOne("SELECT * FROM announcement WHERE id=?",[$editId]):null;
-$anns=DB::fetchAll("SELECT a.*,u.username as poster FROM announcement a LEFT JOIN `user` u ON a.posted_by=u.id ORDER BY a.pinned DESC, a.created_at DESC");
+
+// Build visibility filter: Admins see all; others see company-wide + their dept
+if ($isAdmin) {
+    $anns = DB::fetchAll("SELECT a.*,u.username as poster FROM announcement a LEFT JOIN `user` u ON a.posted_by=u.id ORDER BY a.pinned DESC, a.created_at DESC");
+} else {
+    // Employees and Managers see: company-wide OR their department
+    $viewerDept = $deptId;
+    if (!$viewerDept) {
+        // Employee: look up their own dept from employee record
+        $viewerDept = (int)DB::fetchScalar("SELECT department_id FROM employee WHERE user_id=? LIMIT 1", [$userId]);
+    }
+    if ($viewerDept) {
+        $anns = DB::fetchAll("SELECT a.*,u.username as poster FROM announcement a LEFT JOIN `user` u ON a.posted_by=u.id WHERE a.is_company_wide=1 OR a.department_id=? ORDER BY a.pinned DESC, a.created_at DESC", [$viewerDept]);
+    } else {
+        // No dept — show only company-wide
+        $anns = DB::fetchAll("SELECT a.*,u.username as poster FROM announcement a LEFT JOIN `user` u ON a.posted_by=u.id WHERE a.is_company_wide=1 ORDER BY a.pinned DESC, a.created_at DESC");
+    }
+}
 require_once __DIR__ . '/../includes/layout_header.php';
 ?>
 <div style="margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
@@ -28,7 +67,23 @@ require_once __DIR__ . '/../includes/layout_header.php';
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
 <div style="grid-column:1/-1;"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Title</label><input type="text" name="title" value="<?php echo e($es['title']??'');?>" required style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"></div>
 <div><label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Priority</label><select name="priority" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"><?php foreach(['Low','Medium','High','Urgent'] as $p): ?><option value="<?php echo $p;?>" <?php echo ($es['priority']??'Medium')===$p?'selected':'';?>><?php echo $p;?></option><?php endforeach;?></select></div>
-<div style="display:flex;align-items:center;gap:12px;padding-top:20px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" name="pinned" value="1" <?php echo ($es['pinned']??0)?'checked':'';?>> Pin this announcement</label><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;"><input type="checkbox" name="is_company_wide" value="1" <?php echo ($es['is_company_wide']??1)?'checked':'';?>> Company-wide</label></div>
+<div style="display:flex;align-items:center;gap:12px;padding-top:20px;">
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" name="pinned" value="1" <?php echo ($es['pinned']??0)?'checked':'';?>> Pin this announcement
+    </label>
+    <?php if($isAdmin): ?>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" name="is_company_wide" value="1" <?php echo ($es['is_company_wide']??1)?'checked':'';?>>
+        Company-wide <span style="font-size:11px;color:var(--text-muted);">(all employees)</span>
+    </label>
+    <?php else: ?>
+    <?php /* Managers always post to their department only */ ?>
+    <input type="hidden" name="is_company_wide" value="0">
+    <span style="font-size:12px;color:var(--text-muted);padding:4px 10px;border:1px solid var(--border);border-radius:6px;">
+        &#127970; Visible to your department only
+    </span>
+    <?php endif; ?>
+</div>
 <div style="grid-column:1/-1;"><label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Content</label><textarea name="content" rows="6" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"><?php echo e($es['content']??'');?></textarea></div>
 </div>
 <div style="display:flex;gap:12px;"><button type="submit" class="btn btn-accent">Post Announcement</button><a href="<?php echo url('announcement');?>" class="btn btn-outline">Cancel</a></div>
@@ -45,7 +100,13 @@ foreach($anns as $an): $pc=$pColors[$an['priority']]??'var(--text-muted)'; ?>
         </div>
     </div>
     <p style="color:var(--text-muted);font-size:13px;margin:0 0 10px;line-height:1.6;"><?php echo nl2br(e($an['content']??''));?></p>
-    <div style="font-size:11px;color:var(--text-muted);">Posted by <?php echo e($an['poster']??'System');?> &bull; <?php echo date('M j, Y g:i A',$an['created_at']);?> <?php if($an['is_company_wide']): ?>&bull; Company-wide<?php endif;?></div>
+    <div style="font-size:11px;color:var(--text-muted);">Posted by <?php echo e($an['poster']??'System');?> &bull; <?php echo date('M j, Y g:i A',$an['created_at']);?>
+        <?php if($an['is_company_wide']): ?>
+            &bull; <span style="color:var(--accent);">&#127760; Company-wide</span>
+        <?php else: ?>
+            &bull; <span style="color:#4da6ff;">&#127970; Department only</span>
+        <?php endif;?>
+    </div>
 </div>
 <?php endforeach; if(empty($anns)): ?><div class="hrms-card" style="padding:40px;text-align:center;color:var(--text-muted);">No announcements yet.</div><?php endif;?>
 </div>

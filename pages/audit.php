@@ -59,7 +59,7 @@ $modColors = [
     "position"         => ["#26a69a","rgba(38,166,154,0.12)"],
     "leave"            => ["#ffa726","rgba(255,167,38,0.12)"],
     "attendance"       => ["#ef5350","rgba(239,83,80,0.12)"],
-    "payroll"          => ["#66bb6a","rgba(102,187,106,0.12)"],
+    // "payroll" entry REMOVED — payroll module dropped
     "personnel action" => ["#ff7043","rgba(255,112,67,0.12)"],
     "user management"  => ["#ec407a","rgba(236,64,122,0.12)"],
     "recruitment"      => ["#29b6f6","rgba(41,182,246,0.12)"],
@@ -266,7 +266,7 @@ require_once __DIR__ . "/../includes/layout_header.php";
                 <td style="padding:10px 14px;">
                     <div style="display:flex;align-items:center;gap:8px;">
                         <span style="width:26px;height:26px;border-radius:50%;background:<?php echo $aColor; ?>20;color:<?php echo $aColor; ?>;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;"><?php echo $aIcon; ?></span>
-                        <span style="font-weight:600;font-size:13px;color:<?php echo $aColor; ?>;"><?php echo e($l["action"] ?? "&mdash;"); ?></span>
+                        <span style="font-weight:600;font-size:13px;color:<?php echo $aColor; ?>;"><?php echo e($l["action"] ?? ""); ?></span>
                     </div>
                 </td>
                 <td style="padding:10px 14px;"><?php echo modBadge($l["module"] ?? ""); ?></td>
@@ -279,7 +279,7 @@ require_once __DIR__ . "/../includes/layout_header.php";
                     <span style="color:rgba(255,255,255,0.2);">&mdash;</span>
                     <?php endif; ?>
                 </td>
-                <td style="padding:10px 14px;font-family:monospace;font-size:11px;color:var(--text-muted);"><?php echo e($l["ip"] ?? "&mdash;"); ?></td>
+                <td style="padding:10px 14px;font-family:monospace;font-size:11px;color:var(--text-muted);"><?php echo e($l["ip"] ?? ""); ?></td>
             </tr>
             <?php endforeach; ?>
             <?php if (empty($logs)): ?>

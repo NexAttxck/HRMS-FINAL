@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/auth.php';
@@ -9,6 +9,14 @@ if (isset($_SESSION['user_id'])) {
 }
 
 $error = '';
+$errorType = 'danger'; // 'danger' = red, 'warning' = amber
+
+// Forced logout due to account termination
+if (isset($_GET['blocked']) && $_GET['blocked'] === '1') {
+    $error = 'Your account has been deactivated. Please contact HR for assistance.';
+    $errorType = 'warning';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
@@ -16,7 +24,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header('Location: ' . BASE_URL . '/index.php?page=dashboard');
         exit;
     } else {
-        $error = 'Invalid credentials or account inactive.';
+        // Check if account exists but employee is terminated
+        $userExists = DB::fetchOne(
+            "SELECT u.status as u_status, e.status as e_status FROM `user` u LEFT JOIN employee e ON e.user_id = u.id WHERE u.email = ?",
+            [$email]
+        );
+        if ($userExists && in_array($userExists['e_status'] ?? '', ['Terminated', 'Resigned', 'Inactive'])) {
+            $error = 'Your employment has ended and your account is no longer active. Contact HR for assistance.';
+            $errorType = 'warning';
+        } else {
+            $error = 'Invalid email or password.';
+            $errorType = 'danger';
+        }
     }
 }
 ?>
@@ -46,7 +65,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div style="color:var(--text-muted);font-size:13px;margin-top:4px;">Human Resource Management System</div>
         </div>
         <?php if($error): ?>
-        <div style="background:rgba(239,83,80,0.12);border-left:3px solid #ef5350;border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#ef5350;">
+        <?php
+            $errorStyles = $errorType === 'warning'
+                ? 'background:rgba(251,140,0,0.12);border-left:3px solid #fb8c00;color:#fb8c00;'
+                : 'background:rgba(239,83,80,0.12);border-left:3px solid #ef5350;color:#ef5350;';
+        ?>
+        <div style="<?php echo $errorStyles; ?>border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:20px;font-size:13px;">
+            <?php if($errorType === 'warning'): ?>
+            <strong>&#9888; Access Denied &mdash;</strong>
+            <?php endif; ?>
             <?php echo e($error); ?>
         </div>
         <?php endif; ?>
@@ -61,10 +88,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
             <div style="margin-bottom:24px;">
                 <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.5px;">Password</label>
-                <input type="password" name="password" id="password" required autocomplete="current-password"
-                    style="width:100%;padding:11px 14px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:border .2s;"
-                    onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
-                    placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+                <div style="position:relative;">
+                    <input type="password" name="password" id="password" required autocomplete="current-password"
+                        style="width:100%;padding:11px 14px;padding-right:40px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:14px;outline:none;transition:border .2s;"
+                        onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"
+                        placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;">
+                    <span onclick="var p=document.getElementById('password');if(p.type==='password'){p.type='text';this.innerHTML='&#128064;';}else{p.type='password';this.innerHTML='&#128065;';}" style="position:absolute;right:12px;top:10px;cursor:pointer;opacity:0.6;font-size:16px;" title="Toggle Password Visibility">&#128065;</span>
+                </div>
             </div>
             <button type="submit" class="btn btn-accent" style="width:100%;padding:12px;font-size:15px;font-weight:700;border-radius:8px;">
                 Sign In &rarr;

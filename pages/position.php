@@ -2,7 +2,7 @@
 require_once __DIR__ . "/../config.php";
 require_once __DIR__ . "/../includes/db.php";
 require_once __DIR__ . "/../includes/auth.php";
-Auth::check(); Auth::requireRole(["Super Admin"]); $pageTitle = "Positions &mdash; " . APP_NAME;
+Auth::check(); Auth::requireRole(["Super Admin", "Manager"]); $pageTitle = "Positions &mdash; " . APP_NAME;
 
 // ── POST handlers ──────────────────────────────────────────────────────────
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
@@ -11,12 +11,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $id = (int)($_POST["id"] ?? 0);
         if ($id) {
             DB::execute("UPDATE position SET title=?,code=?,department_id=?,level=?,salary_min=?,salary_max=?,description=? WHERE id=?",
-                [$_POST["title"], $_POST["code"] ?? null, $_POST["department_id"] ?? null, (int)($_POST["level"] ?? 1),
-                 $_POST["salary_min"] ?? 0, $_POST["salary_max"] ?? 0, $_POST["description"] ?? null, $id]);
+                [$_POST["title"], empty($_POST["code"]) ? null : $_POST["code"], empty($_POST["department_id"]) ? null : $_POST["department_id"], (int)($_POST["level"] ?? 1),
+                 $_POST["salary_min"] ?? 0, $_POST["salary_max"] ?? 0, empty($_POST["description"]) ? null : $_POST["description"], $id]);
         } else {
             DB::insert("INSERT INTO position (title,code,department_id,level,salary_min,salary_max,description,created_at) VALUES (?,?,?,?,?,?,?,?)",
-                [$_POST["title"], $_POST["code"] ?? null, $_POST["department_id"] ?? null, (int)($_POST["level"] ?? 1),
-                 $_POST["salary_min"] ?? 0, $_POST["salary_max"] ?? 0, $_POST["description"] ?? null, time()]);
+                [$_POST["title"], empty($_POST["code"]) ? null : $_POST["code"], empty($_POST["department_id"]) ? null : $_POST["department_id"], (int)($_POST["level"] ?? 1),
+                 $_POST["salary_min"] ?? 0, $_POST["salary_max"] ?? 0, empty($_POST["description"]) ? null : $_POST["description"], time()]);
         }
         Auth::audit($id ? 'Update Position' : 'Create Position', 'Position', $id ?: null, $_POST['title'] ?? null);
         Auth::flash("success", "Position saved!"); header("Location: " . url("position")); exit;
@@ -221,9 +221,8 @@ require_once __DIR__ . "/../includes/layout_header.php";
                 $filled = (int)$p['filled_count'];
             ?>
             <tr style="transition:background .12s;" onmouseenter="this.style.background='rgba(255,255,255,0.03)'" onmouseleave="this.style.background=''">
-                <!-- Code -->
                 <td style="padding:12px 16px;">
-                    <?php if ($p['code']): ?>
+                    <?php if (!empty($p['code'])): ?>
                     <span style="font-size:11px;font-family:monospace;background:rgba(255,255,255,0.07);padding:3px 8px;border-radius:5px;color:var(--text-muted);"><?php echo e($p['code']); ?></span>
                     <?php else: ?>
                     <span style="color:rgba(255,255,255,0.15);font-size:12px;">&mdash;</span>

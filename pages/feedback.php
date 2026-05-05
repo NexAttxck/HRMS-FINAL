@@ -28,7 +28,7 @@ require_once __DIR__ . "/../includes/layout_header.php"; ?>
 <div style="padding:14px;border-left:3px solid <?php echo $cc; ?>;background:rgba(255,255,255,0.03);border-radius:0 8px 8px 0;">
 <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-size:12px;font-weight:600;color:<?php echo $cc; ?>;"><?php echo ucfirst($f["category"]); ?></span><span style="font-size:11px;color:var(--text-muted);"><?php echo date("M j, Y",strtotime($f["created_at"])); ?></span></div>
 <p style="margin:0 0 6px;font-size:13px;"><?php echo nl2br(e($f["message"]??"")); ?></p>
-<span style="font-size:11px;color:var(--text-muted);">From: <?php echo e($f["sender_name"]??"Anonymous"); ?><?php if($isAdmin): ?> → <?php echo e($f["receiver_name"]??"—"); ?><?php endif; ?></span>
+<span style="font-size:11px;color:var(--text-muted);">From: <?php echo e($f["sender_name"]??"Anonymous"); ?><?php if($isAdmin): ?> → <?php echo e($f["receiver_name"]??""); ?><?php endif; ?></span>
 </div><?php endforeach; if(empty($list)): ?><p style="text-align:center;color:var(--text-muted);padding:20px;">No feedback yet.</p><?php endif; ?>
 </div></div>
 <?php if(!$isAdmin&&!empty($sent)): ?><div class="hrms-card"><div class="card-header"><h3>Sent Feedback</h3></div><div class="card-body" style="display:flex;flex-direction:column;gap:10px;max-height:280px;overflow-y:auto;">

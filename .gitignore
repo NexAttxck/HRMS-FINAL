@@ -1,0 +1,14 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploaded employee files (contain private data)
+uploads/employee_docs/*/
+uploads/disputes/*/
+
+# Temp / scratch
+test_update.php
+
+# IDE
+.vscode/
+.idea/

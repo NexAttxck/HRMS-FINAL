@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . "/../config.php"; require_once __DIR__ . "/../includes/db.php"; require_once __DIR__ . "/../includes/auth.php";
-Auth::check(); Auth::requireRole(["Super Admin"]); $pageTitle="Personnel Actions &mdash; ".APP_NAME;
+Auth::check(); Auth::requireRole(["Super Admin", "Manager"]); $pageTitle="Personnel Actions &mdash; ".APP_NAME;
 if($_SERVER["REQUEST_METHOD"]==="POST"){$a=$_POST["_action"]??"";
     if($a==="save"){DB::insert("INSERT INTO personnel_action (employee_id,type,effective_date,old_value,new_value,remarks,status,created_by,updated_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",[$_POST["employee_id"],$_POST["type"],$_POST["effective_date"],$_POST["old_value"]??null,$_POST["new_value"]??null,$_POST["remarks"]??null,"Approved",Auth::id(),time(),time()]);
         Auth::audit('Personnel Action: '.($_POST['type'] ?? ''), 'Personnel Action', (int)($_POST['employee_id'] ?? 0), ($_POST['type'] ?? '') . ' — ' . substr($_POST['remarks'] ?? '', 0, 80));
@@ -30,7 +30,7 @@ require_once __DIR__ . "/../includes/layout_header.php"; ?>
 <tr><td style="font-size:12px;color:var(--text-muted);"><?php echo date("M j, Y",strtotime($a2["effective_date"])); ?></td>
 <td style="font-weight:600;"><?php echo e($a2["first_name"]." ".$a2["last_name"]); ?></td>
 <td><span style="color:<?php echo $ac; ?>;font-size:12px;font-weight:600;"><?php echo e($a2["type"]); ?></span></td>
-<td style="font-size:12px;"><span style="text-decoration:line-through;color:var(--text-muted);"><?php echo e($a2["old_value"]??"&mdash;"); ?></span> &rarr; <?php echo e($a2["new_value"]??"&mdash;"); ?></td>
+<td style="font-size:12px;"><span style="text-decoration:line-through;color:var(--text-muted);"><?php echo e($a2["old_value"]??""); ?></span> &rarr; <?php echo e($a2["new_value"]??""); ?></td>
 <td style="font-size:12px;color:var(--text-muted);"><?php echo e(substr($a2["remarks"]??"",0,50)); ?></td>
 <td style="font-size:12px;"><?php echo e($a2["created_by_name"]??"System"); ?></td>
 </tr><?php endforeach; if(empty($actions)): ?><tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">No personnel actions yet.</td></tr><?php endif; ?>

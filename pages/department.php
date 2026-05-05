@@ -8,28 +8,39 @@ $isAdmin   = Auth::isAdmin();
 $isManager = Auth::isManager();
 $action    = $_GET['action'] ?? 'index';
 
+// Resolve manager's department (with session fallback)
+$managerDeptId = Auth::deptId();
+if ($isManager && !$isAdmin && !$managerDeptId) {
+    $managerDeptId = (int)DB::fetchScalar("SELECT department_id FROM employee WHERE user_id=? AND department_id IS NOT NULL LIMIT 1", [Auth::id()]);
+}
+
 if (!$isAdmin && !$isManager && $action !== 'index' && $action !== 'view') {
     Auth::flash('error', 'Access denied.'); header('Location: ' . url('department')); exit;
 }
 // Managers cannot create new departments or delete them
 if ($isManager && !$isAdmin && in_array($action, ['create'])) {
-    Auth::flash('error', 'Managers can only edit existing departments.'); header('Location: ' . url('department')); exit;
+    Auth::flash('error', 'Managers can only edit their own department.'); header('Location: ' . url('department')); exit;
+}
+// Managers can only edit their OWN department
+$editId = (int)($_GET['id'] ?? 0);
+if ($isManager && !$isAdmin && $action === 'edit' && $editId && $editId !== $managerDeptId) {
+    Auth::flash('error', 'You can only edit your own department.'); header('Location: ' . url('department')); exit;
 }
 
 //  POST handlers 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $a = $_POST['_action'] ?? '';
     if ($a === 'save' && ($isAdmin || $isManager)) {
-        $id      = (int)($_POST['id'] ?? 0);
-        $mgr     = (int)($_POST['manager_id'] ?? 0) ?: null;
+        $id = (int)($_POST['id'] ?? 0);
+        // Managers can only save their own department
+        if ($isManager && !$isAdmin && $id && $id !== $managerDeptId) {
+            Auth::flash('error', 'You can only edit your own department.'); header('Location: ' . url('department')); exit;
+        }
         if ($id) {
-            // Managers can only save employee assignments (and manager_id); protect name/budget for Admin only
+            // Managers can only save employee assignments; protect name/budget for Admin only
             if ($isAdmin) {
-                DB::execute("UPDATE department SET name=?,description=?,budget=?,location=?,manager_id=? WHERE id=?",
-                    [$_POST['name'], $_POST['description'] ?? null, $_POST['budget'] ?? 0, $_POST['location'] ?? null, $mgr, $id]);
-            } else {
-                // Manager: only update manager_id and employee assignments
-                DB::execute("UPDATE department SET manager_id=? WHERE id=?", [$mgr, $id]);
+                DB::execute("UPDATE department SET name=?,description=?,budget=?,location=? WHERE id=?",
+                    [$_POST['name'], $_POST['description'] ?? null, $_POST['budget'] ?? 0, $_POST['location'] ?? null, $id]);
             }
 
             // ── Employee assignment (both Admin and Manager) ─────────────────
@@ -40,16 +51,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($remove) {
                 $ph = implode(',', array_fill(0, count($remove), '?'));
                 DB::execute("UPDATE employee SET department_id=NULL WHERE id IN ($ph)", array_values($remove));
+                // Also clear user.department_id for unassigned employees
+                DB::execute("UPDATE `user` u JOIN employee e ON e.user_id=u.id SET u.department_id=NULL WHERE e.id IN ($ph)", array_values($remove));
             }
             if ($newIds) {
                 $ph = implode(',', array_fill(0, count($newIds), '?'));
                 DB::execute("UPDATE employee SET department_id=? WHERE id IN ($ph)",
                     array_merge([$id], array_values($newIds)));
+                // Sync user.department_id so User Management stays accurate
+                DB::execute("UPDATE `user` u JOIN employee e ON e.user_id=u.id SET u.department_id=? WHERE e.id IN ($ph)",
+                    array_merge([$id], array_values($newIds)));
             }
         } elseif ($isAdmin) {
             // Only Admin can create new departments
-            $id = DB::insert("INSERT INTO department (name,description,budget,location,manager_id,created_at) VALUES (?,?,?,?,?,?)",
-                [$_POST['name'], $_POST['description'] ?? null, $_POST['budget'] ?? 0, $_POST['location'] ?? null, $mgr, time()]);
+            $id = DB::insert("INSERT INTO department (name,description,budget,location,created_at) VALUES (?,?,?,?,?)",
+                [$_POST['name'], $_POST['description'] ?? null, $_POST['budget'] ?? 0, $_POST['location'] ?? null, time()]);
         }
         Auth::audit($id ? 'Update Department' : 'Create Department', 'Department', $id ?: null, $_POST['name'] ?? '');
         Auth::flash('success', 'Department saved!'); header('Location: ' . url('department', ['action'=>'edit','id'=>$id])); exit;
@@ -66,7 +82,7 @@ $depts = DB::fetchAll("SELECT d.*,
     (SELECT COUNT(*) FROM employee e WHERE e.department_id=d.id AND e.status IN ('Regular','Probationary','Active')) as emp_count
     FROM department d ORDER BY d.name");
 
-$editId        = (int)($_GET['id'] ?? 0);
+$editId        = $editId ?: (int)($_GET['id'] ?? 0);
 $es            = $editId ? DB::fetchOne("SELECT * FROM department WHERE id=?", [$editId]) : null;
 $allEmployees  = DB::fetchAll("SELECT id,first_name,last_name,job_title,department_id FROM employee ORDER BY first_name,last_name");
 $deptEmpIds    = $editId ? array_column(DB::fetchAll("SELECT id FROM employee WHERE department_id=?", [$editId]), 'id') : [];
@@ -94,7 +110,7 @@ require_once __DIR__ . '/../includes/layout_header.php';
 <?php if ($action === 'create' || $action === 'edit'): ?>
 <!--  Create / Edit Form  -->
 <div class="hrms-card">
-    <div class="card-header"><h3><?php echo $isAdmin ? ($es ? 'Edit Department' : 'New Department') : 'Manage Department Employees'; ?></h3></div>
+    <div class="card-header"><h3><?php echo $es ? 'Edit Department' : 'New Department'; ?></h3></div>
     <div class="card-body">
         <form method="POST">
             <input type="hidden" name="_action" value="save">
@@ -109,39 +125,11 @@ require_once __DIR__ . '/../includes/layout_header.php';
                 </div>
                 <?php endforeach; ?>
 
-                <!-- Manager dropdown (Admin version, full grid) -->
-                <div style="grid-column:1/-1;">
-                    <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Department Manager</label>
-                    <select name="manager_id" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
-                        <option value="">&mdash; No Manager &mdash;</option>
-                        <?php foreach ($allEmployees as $em): ?>
-                        <option value="<?php echo $em['id']; ?>" <?php echo (int)($es['manager_id']??0)===$em['id']?'selected':''; ?>>
-                            <?php echo e($em['first_name'].' '.$em['last_name']); ?>
-                            <?php if ($em['job_title']): ?>(<?php echo e($em['job_title']); ?>)<?php endif; ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-
                 <div style="grid-column:1/-1;">
                     <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Description</label>
                     <textarea name="description" rows="3"
                         style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;"><?php echo e($es['description'] ?? ''); ?></textarea>
                 </div>
-            </div>
-            <?php else: ?>
-            <!-- Manager role: only manager selection -->
-            <div style="margin-bottom:16px;">
-                <label style="display:block;font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;">Department Manager</label>
-                <select name="manager_id" style="width:100%;padding:9px 12px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;">
-                    <option value="">&mdash; No Manager &mdash;</option>
-                    <?php foreach ($allEmployees as $em): ?>
-                    <option value="<?php echo $em['id']; ?>" <?php echo (int)($es['manager_id']??0)===$em['id']?'selected':''; ?>>
-                        <?php echo e($em['first_name'].' '.$em['last_name']); ?>
-                        <?php if ($em['job_title']): ?>(<?php echo e($em['job_title']); ?>)<?php endif; ?>
-                    </option>
-                    <?php endforeach; ?>
-                </select>
             </div>
             <?php endif; ?>
 
@@ -227,14 +215,14 @@ $deptColor = $colors[($editId - 1) % count($colors)];
         Back
     </a>
     <h2 style="margin:0;font-size:22px;font-weight:700;"><?php echo e($dept['name']); ?></h2>
-    <?php if ($isAdmin || $isManager): ?>
-    <a href="<?php echo url('department', ['action' => 'edit', 'id' => $editId]); ?>" class="btn btn-outline" style="margin-left:auto;">&#128101; Manage Employees</a>
+    <?php if ($isAdmin || ($isManager && $editId == $managerDeptId)): ?>
+    <a href="<?php echo url('department', ['action' => 'edit', 'id' => $editId]); ?>" class="btn btn-outline" style="margin-left:auto;">Edit</a>
     <?php endif; ?>
 </div>
 <div class="hrms-card" style="margin-bottom:20px;">
     <div class="card-body" style="display:grid;grid-template-columns:repeat(4,1fr);gap:20px;">
-        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Location</div><div style="font-weight:600;"><?php echo e($dept['location'] ?: '&mdash;'); ?></div></div>
-        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Budget</div><div style="font-weight:600;"><?php echo $dept['budget'] > 0 ? '&#8369;'.number_format($dept['budget'],0) : '&mdash;'; ?></div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Location</div><div style="font-weight:600;"><?php echo e($dept['location'] ?: ''); ?></div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Budget</div><div style="font-weight:600;"><?php echo $dept['budget'] > 0 ? '&#8369;'.number_format($dept['budget'],0) : ''; ?></div></div>
         <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Employees</div><div style="font-weight:600;"><?php echo $dept['emp_count']; ?></div></div>
         <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;margin-bottom:4px;">Description</div><div style="font-size:13px;color:var(--text-muted);"><?php echo e($dept['description'] ?: 'No description.'); ?></div></div>
     </div>
@@ -248,9 +236,9 @@ $deptColor = $colors[($editId - 1) % count($colors)];
             <?php foreach ($deptEmployees as $emp): ?>
             <tr>
                 <td><a href="<?php echo url('employees', ['action' => 'view', 'id' => $emp['id']]); ?>" style="color:var(--accent);"><?php echo e($emp['first_name'] . ' ' . $emp['last_name']); ?></a></td>
-                <td><?php echo e($emp['job_title'] ?? '&mdash;'); ?></td>
-                <td><span class="badge badge-<?php echo strtolower(str_replace(' ', '-', $emp['status'] ?? '')); ?>"><?php echo e($emp['status'] ?? '&mdash;'); ?></span></td>
-                <td><?php echo e($emp['email'] ?? '&mdash;'); ?></td>
+                <td><?php echo e($emp['job_title'] ?? ''); ?></td>
+                <td><span class="badge badge-<?php echo strtolower(str_replace(' ', '-', $emp['status'] ?? '')); ?>"><?php echo e($emp['status'] ?? ''); ?></span></td>
+                <td><?php echo e($emp['email'] ?? ''); ?></td>
             </tr>
             <?php endforeach; ?>
             <?php if (empty($deptEmployees)): ?>
@@ -305,10 +293,10 @@ $avgTeam  = count($depts) > 0 ? round($totalEmp / count($depts), 1) : 0;
             <div style="width:48px;height:48px;border-radius:10px;background:<?php echo $hex22; ?>;display:flex;align-items:center;justify-content:center;">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="<?php echo $color; ?>" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             </div>
-            <?php if ($isAdmin || $isManager): ?>
+            <?php if ($isAdmin || ($isManager && $d['id'] == $managerDeptId)): ?>
             <div style="display:flex;gap:8px;">
                 <a href="<?php echo url('department', ['action' => 'edit', 'id' => $d['id']]); ?>"
-                   style="width:32px;height:32px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);text-decoration:none;" title="Manage Employees">
+                   style="width:32px;height:32px;border:1px solid var(--border);border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);text-decoration:none;" title="Edit">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </a>
                 <?php if ($isAdmin): ?>
@@ -340,7 +328,15 @@ $avgTeam  = count($depts) > 0 ? round($totalEmp / count($depts), 1) : 0;
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Employees</div>
             </div>
             <div style="flex:1;text-align:center;padding:12px;background:rgba(255,255,255,0.03);border-radius:8px;border:1px solid var(--border);">
-                <div style="font-size:22px;font-weight:700;">&#8369;<?php echo $d['budget'] > 0 ? number_format($d['budget'] / 1000, 0) . 'K' : 'N/A'; ?></div>
+                <div style="font-size:22px;font-weight:700;">&#8369;<?php 
+                    if ($d['budget'] >= 1000000) {
+                        echo number_format($d['budget'] / 1000000, 1) . 'm';
+                    } elseif ($d['budget'] > 0) {
+                        echo number_format($d['budget'] / 1000, 0) . 'k';
+                    } else {
+                        echo 'N/A';
+                    }
+                ?></div>
                 <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Budget</div>
             </div>
         </div>

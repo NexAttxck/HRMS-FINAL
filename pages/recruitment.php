@@ -49,14 +49,14 @@ require_once __DIR__ . "/../includes/layout_header.php"; ?>
 <?php endif; ?>
 <div class="hrms-card"><div class="card-body" style="padding:0;"><table class="table hrms-table" style="margin:0;"><thead><tr><th>Name</th><th>Email</th><th>Stage</th><th>Applied</th><?php if($isAdmin||$isManager): ?><th>Update Stage</th><?php endif; ?></tr></thead><tbody>
 <?php $stageColors=["Applied"=>"badge-muted","Screening"=>"badge-info","Interview"=>"badge-warning","Offer"=>"badge-success","Hired"=>"badge-success","Rejected"=>"badge-danger"];
-foreach($candidates as $c): ?><tr><td style="font-weight:600;"><?php echo e($c["name"]); ?></td><td><?php echo e($c["email"]??"—"); ?></td><td><span class="badge <?php echo $stageColors[$c["stage"]]??"badge-muted"; ?>"><?php echo $c["stage"]; ?></span></td><td style="color:var(--text-muted);"><?php echo $c["applied_at"]?date("M j, Y",strtotime($c["applied_at"])):"—"; ?></td>
+foreach($candidates as $c): ?><tr><td style="font-weight:600;"><?php echo e($c["name"]); ?></td><td><?php echo e($c["email"]??""); ?></td><td><span class="badge <?php echo $stageColors[$c["stage"]]??"badge-muted"; ?>"><?php echo $c["stage"]; ?></span></td><td style="color:var(--text-muted);"><?php echo $c["applied_at"]?date("M j, Y",strtotime($c["applied_at"])):"—"; ?></td>
 <?php if($isAdmin||$isManager): ?><td><form method="POST" style="display:flex;gap:6px;"><input type="hidden" name="_action" value="saveCandidate"><input type="hidden" name="id" value="<?php echo $c["id"]; ?>"><input type="hidden" name="job_id" value="<?php echo $jobId; ?>"><select name="stage" style="padding:4px 8px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;"><?php foreach(["Applied","Screening","Interview","Offer","Hired","Rejected"] as $s): ?><option value="<?php echo $s; ?>" <?php echo $c["stage"]===$s?"selected":""; ?>><?php echo $s; ?></option><?php endforeach; ?></select><button type="submit" class="btn btn-sm btn-accent" style="padding:4px 8px;">&#10003;</button></form></td><?php endif; ?>
 </tr><?php endforeach; if(empty($candidates)): ?><tr><td colspan="5" style="text-align:center;padding:24px;color:var(--text-muted);">No candidates yet.</td></tr><?php endif; ?>
 </tbody></table></div></div>
 <?php else: ?>
 <div class="hrms-card"><div class="card-body" style="padding:0;"><table class="table hrms-table" style="margin:0;"><thead><tr><th>Title</th><th>Department</th><th>Type</th><th>Salary</th><th>Status</th><th>Candidates</th><th>Actions</th></tr></thead><tbody>
 <?php foreach($jobs as $j): $sc=$j["status"]==="Open"?"badge-success":($j["status"]==="Closed"?"badge-danger":"badge-muted"); ?>
-<tr><td style="font-weight:600;"><?php echo e($j["title"]); ?></td><td><?php echo e($j["dept_name"]??"—"); ?></td><td><?php echo e($j["type"]??"—"); ?></td>
+<tr><td style="font-weight:600;"><?php echo e($j["title"]); ?></td><td><?php echo e($j["dept_name"]??""); ?></td><td><?php echo e($j["type"]??""); ?></td>
 <td style="font-size:12px;">&#8369;<?php echo number_format($j["salary_min"],0); ?>–<?php echo number_format($j["salary_max"],0); ?></td>
 <td><span class="badge <?php echo $sc; ?>"><?php echo $j["status"]; ?></span></td>
 <td><?php echo $j["cand_count"]; ?></td>

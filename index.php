@@ -37,10 +37,10 @@ if ($page === 'notification' && $action === 'markRead') {
 // Route to page
 // NOTE: 'holiday','benefit','recruitment','project' are DISABLED — remove the comment below to re-enable
 $allowed = [
-    'login','dashboard','employees','attendance','leave','shift','payroll',
-    'department','announcement','onboarding',
+    'login','dashboard','employees','attendance','leave','leave_balance','shift',
+    'department','announcement','onboarding','timelog_dispute',
     'feedback','audit','settings','user_management','report',
-    'my_profile','my_leave','my_schedule','my_payslips','my_onboarding',
+    'my_profile','my_leave','my_schedule','my_onboarding', // 'payroll','my_payslips' REMOVED
     'notification','personnel_action','position'
     // ,'holiday','benefit','recruitment','project'  // <-- re-enable here
 ];

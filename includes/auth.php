@@ -8,6 +8,23 @@ class Auth {
             header('Location: ' . BASE_URL . '/index.php?page=login');
             exit;
         }
+        // Re-verify employee is not terminated (catches mid-session terminations)
+        $empId = $_SESSION['employee_id'] ?? null;
+        if ($empId) {
+            $empStatus = DB::fetchScalar("SELECT status FROM employee WHERE id = ?", [$empId]);
+            if ($empStatus && in_array($empStatus, ['Terminated', 'Resigned', 'Inactive'])) {
+                // Log forced logout
+                DB::execute("INSERT INTO audit_log (user_id, action, module, data, ip, created_at) VALUES (?, 'Forced Logout', 'Auth', ?, ?, ?)", [
+                    $_SESSION['user_id'],
+                    'Account blocked: employee status is ' . $empStatus,
+                    $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    time()
+                ]);
+                session_destroy();
+                header('Location: ' . BASE_URL . '/index.php?page=login&blocked=1');
+                exit;
+            }
+        }
     }
 
     public static function requireRole(array $roles): void {
@@ -20,22 +37,29 @@ class Auth {
 
     public static function login(string $email, string $password): bool {
         $user = DB::fetchOne(
-            "SELECT u.*, e.id as employee_id FROM `user` u LEFT JOIN employee e ON e.user_id = u.id WHERE u.email = ? AND u.status = 'Active'",
+            "SELECT u.*, e.id as employee_id, e.status as emp_status
+             FROM `user` u
+             LEFT JOIN employee e ON e.user_id = u.id
+             WHERE u.email = ? AND u.status = 'Active'",
             [$email]
         );
-        if ($user && $user['password'] === md5($password)) {
-            $_SESSION['user_id']     = $user['id'];
-            $_SESSION['username']    = $user['username'];
-            $_SESSION['email']       = $user['email'];
-            $_SESSION['role']        = $user['role'];
-            $_SESSION['dept_id']     = $user['department_id'];
-            $_SESSION['employee_id'] = $user['employee_id'];
-            DB::execute("INSERT INTO audit_log (user_id, action, module, ip, created_at) VALUES (?, 'Login', 'Auth', ?, ?)", [
-                $user['id'], $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1', time()
-            ]);
-            return true;
+        if (!$user || $user['password'] !== md5($password)) {
+            return false;
         }
-        return false;
+        // Block terminated / resigned / inactive employees
+        if ($user['emp_status'] && in_array($user['emp_status'], ['Terminated', 'Resigned', 'Inactive'])) {
+            return false;
+        }
+        $_SESSION['user_id']     = $user['id'];
+        $_SESSION['username']    = $user['username'];
+        $_SESSION['email']       = $user['email'];
+        $_SESSION['role']        = $user['role'];
+        $_SESSION['dept_id']     = $user['department_id'];
+        $_SESSION['employee_id'] = $user['employee_id'];
+        DB::execute("INSERT INTO audit_log (user_id, action, module, ip, created_at) VALUES (?, 'Login', 'Auth', ?, ?)", [
+            $user['id'], $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1', time()
+        ]);
+        return true;
     }
 
     public static function audit(string $action, string $module, ?int $modelId = null, ?string $data = null): void {

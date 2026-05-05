@@ -6,6 +6,10 @@ $role     = Auth::role();
 $username = Auth::name();
 $userId   = Auth::id();
 
+// Display label map — internal role stays unchanged for auth logic
+$roleLabelMap = ['Super Admin' => 'HR Manager', 'Manager' => 'Manager', 'Employee' => 'Employee'];
+$roleLabel    = $roleLabelMap[$role] ?? $role;
+
 // Notifications
 $unreadCount = (int) DB::fetchScalar("SELECT COUNT(*) FROM system_notification WHERE user_id = ? AND is_read = 0", [$userId]);
 $recentNotifs = DB::fetchAll("SELECT * FROM system_notification WHERE user_id = ? ORDER BY created_at DESC LIMIT 5", [$userId]);
@@ -21,9 +25,11 @@ $adminMenu = [
     ['Announcements',      'announcement',     '&#128227;'],
     ['Attendance',         'attendance',       '&#128339;'],
     ['Leave Management',   'leave',            '&#128197;'],
+    ['Leave Balances',     'leave_balance',    '&#128200;'],
     ['Shift Scheduling',   'shift',            '&#128197;'],
+    ['Timelog Disputes',   'timelog_dispute',   '&#128221;'],
     // ['Holidays',        'holiday',          '&#127878;'],   // DISABLED
-    ['Payroll',            'payroll',          '&#128181;'],
+    // ['Payroll',         'payroll',          '&#128181;'],  // REMOVED
     // ['Benefits',        'benefit',          '&#127873;'],   // DISABLED
     // ['Recruitment',     'recruitment',      '&#128203;'],   // DISABLED
     // ['Projects',        'project',          '&#128196;'],   // DISABLED
@@ -45,19 +51,24 @@ $managerMenu = [
     ['Announcements',      'announcement',     '&#128227;'],
     ['Attendance',         'attendance',       '&#128339;'],
     ['Leave Management',   'leave',            '&#128197;'],
+    ['Leave Balances',     'leave_balance',    '&#128200;'],
     ['Shift Scheduling',   'shift',            '&#128197;'],
-    // ['L&D Management',  'lms',              '&#127891;'],  // REMOVED
+    ['Timelog Disputes',   'timelog_dispute',   '&#128221;'],
+    // ['Payroll',         'payroll',          '&#128181;'],  // REMOVED
     ['Feedback',           'feedback',         '&#128172;'],
     ['Reports',            'report',           '&#128202;'],
+    ['System Settings',    'settings',         '&#9881;'],
 ];
 $employeeMenu = [
     ['Dashboard',      'dashboard',   '&#9632;'],
     ['My Profile',     'my_profile',  '&#128100;'],
     ['Announcements',  'announcement','&#128227;'],
+    ['My Attendance',  'attendance',  '&#128339;'],
     ['My Schedule',    'my_schedule', '&#128197;'],
     ['My Leave',       'my_leave',    '&#128197;'],
-    ['My Payslips',    'my_payslips', '&#128181;'],
-    ['My Onboarding', 'my_onboarding', '&#9998;'],
+    // ['My Payslips',  'my_payslips', '&#128181;'],  // REMOVED
+    ['My Onboarding',  'my_onboarding','&#9998;'],
+    ['Timelog Disputes','timelog_dispute','&#128221;'],
     ['Feedback',       'feedback',    '&#128172;'],
 ];
 $menu = $role === 'Super Admin' ? $adminMenu : ($role === 'Manager' ? $managerMenu : $employeeMenu);
@@ -185,32 +196,19 @@ $flashes = Auth::getFlashes();
         }
     }
     applyDarkMode(dm);
-    var cm = localStorage.getItem('hrms_compact_mode') || 'off';
-    if (cm === 'on') {
-        var s = document.createElement('style'); s.id = 'compact-style';
-        s.textContent = [':root { font-size:12px !important; }','.hrms-main { padding:14px !important; }',
-            '.hrms-table tbody td, .hrms-table thead th { padding:6px 10px !important; }',
-            '.kpi-value { font-size:18px !important; }','.hrms-card { border-radius:8px !important; }',
-            '.kpi-card { padding:14px !important; }','.card-body { padding:14px !important; }'].join('');
-        document.head.appendChild(s);
-    }
+
+    // ── Font Size Persistence — uses body zoom to scale ALL px values site-wide ──
+    (function() {
+        var size = parseInt(localStorage.getItem('hrms_font_size') || '14', 10);
+        if (size < 12) size = 12;
+        if (size > 20) size = 20;
+        var zoom = (size / 14).toFixed(4);
+        var el = document.getElementById('hrmsFontStyle');
+        if (!el) { el = document.createElement('style'); el.id = 'hrmsFontStyle'; document.head.appendChild(el); }
+        el.textContent = 'body.hrms-body { zoom: ' + zoom + '; }';
+    })();
+
     window.hrmsApplyDarkMode = applyDarkMode;
-    window.hrmsApplyCompactMode = function(val) {
-        if (val === 'on') {
-            if (!document.getElementById('compact-style')) {
-                var s = document.createElement('style'); s.id = 'compact-style';
-                s.textContent = [':root { font-size:12px !important; }','.hrms-main { padding:14px !important; }',
-                    '.hrms-table tbody td, .hrms-table thead th { padding:6px 10px !important; }',
-                    '.kpi-value { font-size:18px !important; }','.hrms-card { border-radius:8px !important; }',
-                    '.kpi-card { padding:14px !important; }','.card-body { padding:14px !important; }'].join('');
-                document.head.appendChild(s);
-            }
-            document.documentElement.setAttribute('data-compact','on');
-        } else {
-            document.documentElement.removeAttribute('data-compact');
-            var s = document.getElementById('compact-style'); if (s) s.remove();
-        }
-    };
 })();
 </script>
 </head>
@@ -221,10 +219,6 @@ $flashes = Auth::getFlashes();
 <header class="hrms-header">
     <div class="header-left">
         <button class="mobile-toggle" onclick="document.getElementById('sidebar').classList.toggle('open')">&#9776;</button>
-        <div class="header-search">
-            <span class="search-icon">&#128269;</span>
-            <input type="text" placeholder="Search employees, documents..." class="search-input">
-        </div>
     </div>
     <div class="header-right">
         <div class="notif-bell" onclick="toggleNotifications()" style="position:relative;cursor:pointer;padding:6px;border-radius:8px;transition:background .2s;" onmouseenter="this.style.background='rgba(255,255,255,0.07)'" onmouseleave="this.style.background='transparent'">
@@ -269,7 +263,7 @@ $flashes = Auth::getFlashes();
                 <span class="user-avatar"><?php echo strtoupper(substr($username ?: 'U', 0, 2)); ?></span>
                 <span class="user-info">
                     <span class="user-name"><?php echo e($username); ?></span>
-                    <span class="user-role"><?php echo e($role); ?></span>
+                    <span class="user-role"><?php echo e($roleLabel); ?></span>
                 </span>
             </a>
             <ul class="dropdown-menu dropdown-menu-right hrms-dropdown">
